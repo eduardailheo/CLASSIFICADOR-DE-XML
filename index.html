@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Separador de XML — Protheus / NFe / NFSe</title>
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=" />
+  <style>
+    :root{--bg:#f7f8fa;--card:#ffffff;--muted:#666;--accent:#0b5fff}
+    body{font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);margin:0;padding:24px;color:#222}
+    .wrap{max-width:980px;margin:0 auto}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+    header h1{font-size:18px;margin:0}
+    .card{background:var(--card);padding:18px;border-radius:12px;box-shadow:0 6px 18px rgba(10,10,10,0.06);margin-bottom:16px}
+    label{display:block;font-weight:600;margin-bottom:6px}
+    input[type=file]{display:block}
+    textarea{width:100%;min-height:68px;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-family:monospace}
+    .row{display:flex;gap:12px;align-items:center}
+    .controls{display:flex;gap:8px;margin-top:12px}
+    button{padding:10px 14px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+    button.secondary{background:#64748b}
+    .muted{color:var(--muted)}
+    #sepPreview{padding:10px;border-radius:8px;background:#fbfdff;border:1px dashed #e6eefc;min-height:70px}
+    #sepLog{height:160px;overflow:auto;background:#0f1724;color:#e6eefc;padding:10px;border-radius:8px;font-family:monospace;font-size:13px}
+    footer{font-size:13px;color:var(--muted);margin-top:8px}
+    .hint{font-size:13px;color:#374151}
+    .small{font-size:13px;color:var(--muted)}
+    @media(max-width:700px){.row{flex-direction:column;align-items:stretch}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'><rect rx='5' width='24' height='24' fill='%230b5fff'/><text x='12' y='16' font-size='12' font-family='Arial' fill='white' text-anchor='middle'>XML</text></svg>" alt="logo" />
+      <div>
+        <h1>Separador de XML — NFe / NFSe</h1>
+        <div class="small">Ferramenta para organizar múltiplos XMLs por CNPJ &gt; Tipo (ENTRADA/SAÍDA) &gt; NFS-SERVIÇO / NFE-PRODUTO</div>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="usage">
+      <h2 id="usage" style="margin-top:0;font-size:15px">Configuração</h2>
+      <div class="hint">Insira o(s) CNPJ(s) de filial que deverão ser usados como raiz de separação. Separe por vírgula, ponto-e-vírgula, espaço ou linha. O programa aceita vários CNPJs. CNPJs não encontrados irão para a pasta <b>DESCONHECIDO</b>.</div>
+
+      <label for="sepCnpj">CNPJ(s) da filial (14 dígitos, sem pontuação)</label>
+      <textarea id="sepCnpj" placeholder="Ex: 01234567000189, 98765432000101"></textarea>
+
+      <label for="sepFiles" style="margin-top:12px">Arquivos XML (múltiplos)</label>
+      <input id="sepFiles" type="file" accept=".xml" multiple />
+
+      <div class="controls">
+        <button id="sepRunBtn">Classificar XMLs</button>
+        <button id="sepZipBtn" class="secondary">Exportar ZIP</button>
+        <button id="sepClearBtn" class="secondary" style="background:#ef4444">Limpar Logs</button>
+      </div>
+
+      <div style="margin-top:12px">
+        <label>Resumo (pré-visualização)</label>
+        <div id="sepPreview" aria-live="polite">— sem itens —</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin-top:0">Log de execução</h2>
+      <div id="sepLog" role="status" aria-live="polite">Aguardando ação...</div>
+      <div style="margin-top:10px" class="small">Logs mostram arquivos ignorados, erros de parse e resumo. Use o botão "Exportar ZIP" após a classificação.</div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin-top:0">Como organizar o ZIP</h2>
+      <ol>
+        <li>CNPJ-da-filial/</li>
+        <li>&nbsp;&nbsp;XML de Entrada/ (ou XML de Saida)</li>
+        <li>&nbsp;&nbsp;&nbsp;&nbsp;XML entrada produtos (ou XML Saida produtos)</li>
+        <li>&nbsp;&nbsp;&nbsp;&nbsp;XML entrada notas de serviço (ou XML Saida notas de serviço)</li>
+      </ol>
+      <div class="muted">Documentos que não corresponderem a nenhum CNPJ informado serão agrupados em: <b>DESCONHECIDO/...</b></div>
+    </section>
+
+    <footer>
+      <div class="small">Observação: O processamento é feito localmente no seu navegador — nenhum arquivo é enviado a servidores remotos. Para disponibilizar como site, hospede este arquivo "separador-xml.html" em um servidor estático.</div>
+    </footer>
+  </div>
+
+  <!-- Dependência: JSZip (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- Script principal (seu código JS) -->
+  <script>
+// Copiado/embutido do seu separador.js — ajustado apenas para bind com o HTML acima
+(function () {
+  const LOG_ID = 'sepLog';
+
+  // ---------- helpers ----------
+  const log = (msg) => {
+    const el = document.getElementById(LOG_ID);
+    if (el) {
+      el.textContent += (el.textContent ? '\n' : '') + msg;
+      el.scrollTop = el.scrollHeight;
+    }
+    console.debug('[Separador]', msg);
+  };
+
+  const onlyDigits = (s) => String(s || '').replace(/\D+/g, '');
+  const sanitizeName = (s) =>
+    String(s || '').replace(/[\\/:*?"<>|]/g, ' ').trim().replace(/\s{2,}/g, ' ');
+  const isXmlFile = (f) => /\.xml$/i.test(f?.name || '');
+
+  const parseFrontCNPJs = (raw) => {
+    const parts = String(raw || '')
+      .split(/[.,;\n ]+/)
+      .map(onlyDigits)
+      .filter((c) => c.length === 14);
+    return Array.from(new Set(parts));
+  };
+
+  const parseXml = (text) => {
+    const p = new DOMParser();
+    const doc = p.parseFromString(text, 'application/xml');
+    const err = doc.getElementsByTagName('parsererror')[0];
+    if (err) throw new Error('XML inválido');
+    return doc;
+  };
+
+  const findAnyByLocal = (root, names) => {
+    if (!root) return null;
+    const want = (Array.isArray(names) ? names : [names]).map((n) => String(n).toLowerCase());
+    const start = root.nodeType === 9 ? root.documentElement : root;
+    const q = [start];
+    while (q.length) {
+      const el = q.shift();
+      if (!el || el.nodeType !== 1) continue;
+      const ln = (el.localName || el.nodeName || '').toLowerCase();
+      // strip possible prefix like ns:InfNFe -> infnfe
+      const lnSimple = ln.split(':').pop();
+      if (want.includes(lnSimple)) return el;
+      const kids = el.children || [];
+      for (let i = 0; i < kids.length; i++) q.push(kids[i]);
+    }
+    return null;
+  };
+
+  const findText = (root, path) => {
+    let node = root;
+    for (const n of path) {
+      node = findAnyByLocal(node, n);
+      if (!node) return '';
+    }
+    return node.textContent ? node.textContent.trim() : '';
+  };
+
+  function detectTipo(doc) {
+    if (findAnyByLocal(doc, 'infNFe')) return 'NFE';
+    if (findAnyByLocal(doc, ['Nfse', 'InfNfse', 'ConsultarNfseResposta', 'CompNfse'])) return 'NFSE';
+    return 'DESCONHECIDO';
+  }
+
+  function extractNFeEmit(doc) {
+    const inf = findAnyByLocal(doc, 'infNFe') || doc;
+    const emit = findAnyByLocal(inf, 'emit') || findAnyByLocal(doc, 'emit');
+    if (!emit) return { cnpj: '', nome: '', numero: '', why: 'emit não encontrado' };
+    const cnpj =
+      onlyDigits(findText(emit, ['CNPJ'])) || onlyDigits(findText(emit, ['CPF']));
+    const nome = findText(emit, ['xNome']) || findText(emit, ['xFant']) || '';
+    const numero = findText(inf, ['ide', 'nNF']) || findText(doc, ['ide', 'nNF']) || '';
+    return { cnpj, nome, numero };
+  }
+
+  function extractNFeDest(doc) {
+    const inf = findAnyByLocal(doc, 'infNFe') || doc;
+    const dest = findAnyByLocal(inf, 'dest') || findAnyByLocal(doc, 'dest');
+    if (!dest) return { cnpj: '', nome: '', why: 'dest não encontrado' };
+    const cnpj =
+      onlyDigits(findText(dest, ['CNPJ'])) || onlyDigits(findText(dest, ['CPF']));
+    const nome = findText(dest, ['xNome']) || '';
+    return { cnpj, nome };
+  }
+
+  function extractNFSePrestador(doc) {
+    const inf = findAnyByLocal(doc, 'InfNfse') || doc;
+    const prest =
+      findAnyByLocal(inf, 'PrestadorServico') ||
+      findAnyByLocal(doc, 'PrestadorServico') ||
+      findAnyByLocal(inf, 'Prestador') ||
+      findAnyByLocal(doc, 'Prestador');
+
+    if (!prest) return { cnpj: '', nome: '', numero: '', why: 'Prestador não encontrado' };
+
+    const idp =
+      findAnyByLocal(prest, 'IdentificacaoPrestador') ||
+      findAnyByLocal(prest, 'Identificacao') ||
+      prest;
+
+    const cnpj =
+      onlyDigits(findText(idp, ['Cnpj'])) ||
+      onlyDigits(findText(idp, ['CPF'])) ||
+      onlyDigits(findText(idp, ['Cpf'])) ||
+      onlyDigits(findText(idp, ['CpfCnpj', 'Cnpj'])) ||
+      onlyDigits(findText(idp, ['CpfCnpj', 'Cpf']));
+
+    const nome =
+      findText(prest, ['RazaoSocial']) ||
+      findText(prest, ['Razao']) ||
+      findText(prest, ['NomeRazao']) ||
+      '';
+
+    const numero =
+      findText(inf, ['Numero']) ||
+      findText(doc, ['Numero']) ||
+      findText(doc, ['IdentificacaoNfse', 'Numero']) ||
+      '';
+
+    return { cnpj, nome, numero };
+  }
+
+  function extractNFSeTomador(doc) {
+    const inf = findAnyByLocal(doc, 'InfNfse') || doc;
+    const tom =
+      findAnyByLocal(inf, 'TomadorServico') ||
+      findAnyByLocal(doc, 'TomadorServico') ||
+      findAnyByLocal(inf, 'Tomador') ||
+      findAnyByLocal(doc, 'Tomador');
+
+    if (!tom) return { cnpj: '', nome: '', why: 'Tomador não encontrado' };
+
+    const idt =
+      findAnyByLocal(tom, 'IdentificacaoTomador') ||
+      findAnyByLocal(tom, 'Identificacao') ||
+      tom;
+
+    const cnpj =
+      onlyDigits(findText(idt, ['Cnpj'])) ||
+      onlyDigits(findText(idt, ['CPF'])) ||
+      onlyDigits(findText(idt, ['Cpf'])) ||
+      onlyDigits(findText(idt, ['CpfCnpj', 'Cnpj'])) ||
+      onlyDigits(findText(idt, ['CpfCnpj', 'Cpf']));
+
+    const nome =
+      findText(tom, ['RazaoSocial']) ||
+      findText(tom, ['NomeFantasia']) ||
+      findText(tom, ['Razao']) ||
+      '';
+
+    return { cnpj, nome };
+  }
+
+  function classifyAgainstFront(doc, frontCNPJs) {
+    const tipo = detectTipo(doc);
+    const out = [];
+
+    if (tipo === 'NFE') {
+      const emit = extractNFeEmit(doc);
+      const dest = extractNFeDest(doc);
+
+      for (const front of frontCNPJs) {
+        if (emit.cnpj && emit.cnpj === front) {
+          out.push({
+            front,
+            tipo,
+            subtipo: 'produto',
+            io: 'Saida',
+            numero: emit.numero || '',
+            arquivo: { emit, dest }
+          });
+          continue;
+        }
+        if (dest.cnpj && dest.cnpj === front) {
+          out.push({
+            front,
+            tipo,
+            subtipo: 'produto',
+            io: 'entrada',
+            numero: emit.numero || '',
+            arquivo: { emit, dest }
+          });
+        }
+      }
+      return out;
+    }
+
+    if (tipo === 'NFSE') {
+      const prest = extractNFSePrestador(doc);
+      const tom = extractNFSeTomador(doc);
+
+      for (const front of frontCNPJs) {
+        if (prest.cnpj && prest.cnpj === front) {
+          out.push({
+            front,
+            tipo,
+            subtipo: 'servico',
+            io: 'Saida',
+            numero: prest.numero || '',
+            arquivo: { prest, tom }
+          });
+          continue;
+        }
+        if (tom.cnpj && tom.cnpj === front) {
+          out.push({
+            front,
+            tipo,
+            subtipo: 'servico',
+            io: 'entrada',
+            numero: prest.numero || '',
+            arquivo: { prest, tom }
+          });
+        }
+      }
+      return out;
+    }
+
+    return out;
+  }
+
+  function renderPreview(containerId, summary) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    const fronts = Object.keys(summary).sort();
+    if (!fronts.length) {
+      el.innerHTML = '<div class="muted">— sem itens válidos —</div>';
+      return;
+    }
+
+    const out = [];
+    out.push('<ul class="sep-list">');
+    for (const front of fronts) {
+      const s = summary[front];
+      out.push(`<li><b>${front}</b><ul>`);
+      out.push(`<li>produto/entrada: ${s.produto.entrada}</li>`);
+      out.push(`<li>produto/Saida: ${s.produto.Saida}</li>`);
+      out.push(`<li>serviço/entrada: ${s.servico.entrada}</li>`);
+      out.push(`<li>serviço/Saida: ${s.servico.Saida}</li>`);
+      out.push('</ul></li>');
+    }
+    out.push('</ul>');
+    el.innerHTML = out.join('\n');
+  }
+
+  function buildZipByFront(rows) {
+    const zip = new JSZip();
+
+    for (const r of rows) {
+      const root = r.front || 'DESCONHECIDO';
+      const dirIO = r.io === 'Saida' ? 'XML de Saida' : 'XML de Entrada';
+      const dirSub =
+        r.subtipo === 'servico'
+          ? (r.io === 'Saida' ? 'XML Saida notas de serviço' : 'XML entrada notas de serviço')
+          : (r.io === 'Saida' ? 'XML Saida produtos' : 'XML entrada produtos');
+
+      const base = `${root}/${dirIO}/${dirSub}/`;
+
+      const safeName = sanitizeName(r.filename || 'documento');
+      const chosen = r.numero ? sanitizeName(r.numero) + '-' + safeName : safeName;
+      zip.file(base + chosen + '.xml', r.content);
+    }
+    return zip;
+  }
+
+  function setupSeparator() {
+    const cnpjInput = document.getElementById('sepCnpj');
+    const fileInput = document.getElementById('sepFiles');
+    const runBtn = document.getElementById('sepRunBtn');
+    const zipBtn = document.getElementById('sepZipBtn');
+    const clearBtn = document.getElementById('sepClearBtn');
+    const previewId = 'sepPreview';
+    const logEl = document.getElementById(LOG_ID);
+
+    if (!cnpjInput || !fileInput || !runBtn || !zipBtn || !logEl) {
+      console.warn('[Separador] UI não encontrada.');
+      return;
+    }
+
+    let results = [];
+    let summary = {};
+
+    const ensureFrontSummary = (front) => {
+      if (!summary[front]) {
+        summary[front] = {
+          produto: { entrada: 0, Saida: 0 },
+          servico: { entrada: 0, Saida: 0 }
+        };
+      }
+    };
+
+    runBtn.addEventListener('click', async () => {
+      const frontCNPJs = parseFrontCNPJs(cnpjInput.value);
+      logEl.textContent = '';
+      results = [];
+      summary = {};
+
+      if (!frontCNPJs.length) {
+        log('⛔ Informe ao menos um CNPJ de 14 dígitos (separe por vírgula/ espaço).');
+        return;
+      }
+
+      const files = Array.from(fileInput.files || []).filter(isXmlFile);
+      if (!files.length) {
+        log('⛔ Nenhum XML selecionado.');
+        return;
+      }
+
+      log(`▶️ Processando ${files.length} arquivo(s) XML...`);
+      for (const f of files) {
+        try {
+          const text = await f.text();
+          const doc = parseXml(text);
+          const matches = classifyAgainstFront(doc, frontCNPJs);
+
+          if (!matches.length) {
+            // tenta classificar como DESCONHECIDO: verificar se é NFE ou NFSE
+            const tipo = detectTipo(doc);
+            ensureFrontSummary('DESCONHECIDO');
+            // fallback: agrupamos no DESCONHECIDO mantendo tipo/subtipo/IO padrão
+            if (tipo === 'NFE') {
+              summary['DESCONHECIDO'].produto.entrada += 0; // não altera contagem útil
+              results.push({
+                front: 'DESCONHECIDO',
+                tipo: 'NFE',
+                subtipo: 'produto',
+                io: 'entrada',
+                numero: '',
+                filename: f.name,
+                content: text
+              });
+            } else if (tipo === 'NFSE') {
+              summary['DESCONHECIDO'].servico.entrada += 0;
+              results.push({
+                front: 'DESCONHECIDO',
+                tipo: 'NFSE',
+                subtipo: 'servico',
+                io: 'entrada',
+                numero: '',
+                filename: f.name,
+                content: text
+              });
+            } else {
+              log(`⚠️ Ignorado (não pertence a nenhum CNPJ informado): ${f.name}`);
+              continue;
+            }
+
+            log(`⚠️ Arquivo atribuído a DESCONHECIDO: ${f.name}`);
+            continue;
+          }
+
+          for (const m of matches) {
+            ensureFrontSummary(m.front);
+            // normalizar a chave 'Saida' exata usada no resumo
+            if (m.io === 'Saida') summary[m.front][m.subtipo].Saida += 1;
+            else summary[m.front][m.subtipo].entrada += 1;
+
+            results.push({
+              front: m.front,
+              tipo: m.tipo,
+              subtipo: m.subtipo,
+              io: m.io,
+              numero: m.numero || '',
+              filename: f.name,
+              content: text
+            });
+          }
+        } catch (e) {
+          log(`⛔ Erro em ${f.name}: ${e.message}`);
+        }
+      }
+
+      renderPreview(previewId, summary);
+      log('✅ Concluído. Revise o resumo e exporte o ZIP.');
+    });
+
+    zipBtn.addEventListener('click', async () => {
+      if (!results.length) {
+        log('⚠️ Nada para exportar. Execute a classificação primeiro.');
+        return;
+      }
+      if (!window.JSZip) {
+        log('⚠️ JSZip não carregado.');
+        return;
+      }
+      const zip = buildZipByFront(results);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'xml_organizados.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      log('📦 ZIP gerado.');
+    });
+
+    clearBtn.addEventListener('click', () => {
+      const el = document.getElementById(LOG_ID);
+      if (el) el.textContent = '';
+    });
+
+    window.__sepReady = true;
+    log('UI do Separador pronta (multi-CNPJ).');
+  }
+
+  function boot() {
+    if (document.getElementById('sepRunBtn')) return setupSeparator();
+    const mo = new MutationObserver(() => {
+      if (document.getElementById('sepRunBtn')) {
+        mo.disconnect();
+        setupSeparator();
+      }
+    });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+  </script>
+</body>
+</html>
